@@ -14,9 +14,9 @@ import (
 const (
 	MatchmakeQueue = "matchmake"
 	playerPoolKey  = "player_pool"
-	natsSubject    = "matchmake.request"
 	MinPlayers     = 2
 	MaxPlayers     = 16
+	BatchSize      = 50 // Process players in batches of 50
 )
 
 type MatchmakeWorker struct {
@@ -33,30 +33,41 @@ func NewMatchmakeWorker(natsClient *nats.Conn, redisClient *redis.Client) *Match
 
 func (mw *MatchmakeWorker) Start() error {
 	_, err := mw.natsClient.QueueSubscribe(MatchmakeQueue, MatchmakeQueue, func(msg *nats.Msg) {
-		// Get all available players from the pool
-		ctx := context.Background()
-		result, err := mw.redisClient.ZRangeWithScores(ctx, playerPoolKey, 0, -1).Result()
-		if err != nil {
-			log.Printf("Error getting players from pool: %v", err)
-			return
-		}
-
-		if len(result) < MinPlayers {
-			// Not enough players for any match
-			log.Printf("Not enough players in pool: %d (minimum: %d)", len(result), MinPlayers)
-			return
-		}
-
-		// Process players and create matches
-		mw.processPlayersAndCreateMatches(ctx, result)
-
+		mw.processPlayerBatches()
 		msg.Ack()
 	})
 
 	return err
 }
 
-func (mw *MatchmakeWorker) processPlayersAndCreateMatches(ctx context.Context, players []redis.Z) {
+func (mw *MatchmakeWorker) processPlayerBatches() {
+	ctx := context.Background()
+
+	for {
+		result, err := mw.redisClient.ZRangeWithScores(ctx, playerPoolKey, 0, BatchSize-1).Result()
+		if err != nil {
+			log.Printf("Error getting player batch: %v", err)
+			return
+		}
+
+		if len(result) < MinPlayers {
+			log.Printf("Not enough players in batch: %d (minimum: %d)", len(result), MinPlayers)
+			return
+		}
+
+		matches := mw.processBatch(ctx, result)
+
+		for _, match := range matches {
+			log.Printf("Created match %s with %d players", match.MatchID, len(match.Players))
+		}
+
+		if len(result) < BatchSize {
+			break
+		}
+	}
+}
+
+func (mw *MatchmakeWorker) processBatch(ctx context.Context, players []redis.Z) []entities.Match {
 	// Convert Redis results to Player entities
 	playerEntities := make([]entities.Player, 0, len(players))
 	for _, z := range players {
@@ -76,9 +87,7 @@ func (mw *MatchmakeWorker) processPlayersAndCreateMatches(ctx context.Context, p
 	}
 	mw.redisClient.ZRem(ctx, playerPoolKey, playerIDs...)
 
-	for _, match := range matches {
-		log.Printf("Created match %s with %d players", match.MatchID, len(match.Players))
-	}
+	return matches
 }
 
 func (mw *MatchmakeWorker) createOptimalMatches(players []entities.Player) []entities.Match {
