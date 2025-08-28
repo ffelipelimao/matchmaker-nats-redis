@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+option go_package = "./gen";
+
+package matchmaker;
+
+message Player {
+    string id = 1;
+    int32 ping = 2;
+}
+
+message MatchRequest {
+    Player player = 1;
+}
+
+message Match {
+    string match_id = 1;
+    repeated Player players = 2;
+    int64 created_at = 3;
+}
