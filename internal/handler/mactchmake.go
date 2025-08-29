@@ -43,7 +43,7 @@ func (h *matchmakeHandler) Executer(c *fiber.Ctx) error {
 
 	log.Printf("[HANDLER] Request parsed successfully - Player ID: %s, Ping: %dms", req.Player.ID, req.Player.Ping)
 
-	// Add player to FIFO pool in Redis (Sorted Set)
+	// Add player to FIFO pool in Redis (Sorted Set by timestamp)
 	log.Printf("[HANDLER] Adding player %s to Redis pool with timestamp %d", req.Player.ID, time.Now().Unix())
 
 	_, err := h.redisClient.ZAdd(ctx, playerPoolKey, &redis.Z{
