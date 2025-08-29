@@ -1,0 +1,40 @@
+# Git
+.git
+.gitignore
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Build artifacts
+bin/
+dist/
+build/
+
+# Dependencies
+vendor/
+
+# Test files
+*_test.go
+test/
+
+# Documentation
+README.md
+docs/
+
+# Makefile
+Makefile

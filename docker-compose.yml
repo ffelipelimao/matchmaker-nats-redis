@@ -1,0 +1,93 @@
+version: '3.8'
+
+services:
+  # Redis para o pool de jogadores
+  redis:
+    image: redis:7-alpine
+    container_name: matchmaker-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # NATS para mensageria
+  nats:
+    image: nats:2.9-alpine
+    container_name: matchmaker-nats
+    ports:
+      - "4222:4222"      # Client connections
+      - "8222:8222"      # HTTP management port
+    command: nats-server --jetstream --http_port 8222
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8222/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # API da aplicação Go
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: matchmaker-api
+    ports:
+      - "8080:8080"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=
+      - NATS_URL=nats://nats:4222
+      - APP_PORT=8080
+      - WORKER=false
+    depends_on:
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    volumes:
+      - ./internal:/app/internal
+      - ./pkg:/app/pkg
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Worker da aplicação Go
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: matchmaker-worker
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=
+      - NATS_URL=nats://nats:4222
+      - WORKER=true
+    depends_on:
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    volumes:
+      - ./internal:/app/internal
+      - ./pkg:/app/pkg
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+    driver: local
+
+networks:
+  default:
+    name: matchmaker-network
